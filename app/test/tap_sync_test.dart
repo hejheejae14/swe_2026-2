@@ -84,6 +84,13 @@ void main() {
       expect(model.positionOf(song), isNull);
     });
 
+    test('without Spotify or a followed music app, play starts tap to sync and says so', () async {
+      await model.playSong(song, at: 5);
+      expect(model.tapSynced(song), isTrue);
+      expect(model.positionOf(song), closeTo(5, 0.2));
+      expect(model.banner?.message, isNotNull);
+    });
+
     test('saved tap times sync the song and keep the lyrics running', () {
       final plain = Song(id: 'p', title: 'Plain', artist: 'Team', lyricsType: LyricsType.plain, sourceProvider: 'manual');
       model.collection.addSong(plain, LRCParser.parse('one\ntwo'));

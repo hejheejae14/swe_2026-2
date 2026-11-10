@@ -305,7 +305,7 @@ class LRCLIBClient implements LyricsProvider {
   LRCLIBClient({
     http.Client? client,
     Uri? baseURL,
-    this.userAgent = 'Vinylo/0.12 (lyrics study app)',
+    this.userAgent = 'Vinylo/0.13 (lyrics study app)',
     Future<void> Function(Duration)? sleep,
   })  : _client = client ?? http.Client(),
         baseURL = baseURL ?? Uri.parse('https://lrclib.net/api'),

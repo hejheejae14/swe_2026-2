@@ -799,6 +799,15 @@ class AppModel extends ChangeNotifier {
             showBanner(null);
             attachSpotify(retryRemote: true);
           });
+        } else if (!MusicApp.supported) {
+          // Nothing to follow: the user plays the song in their music app and the lyrics run on
+          // tap to sync from [at].
+          if (song.lyricsType != LyricsType.synced) {
+            fail(tr('음악 앱에서 이 곡을 틀어 주세요. 싱크가 없는 가사는 메뉴에서 탭으로 싱크를 만들 수 있어요.'));
+            return;
+          }
+          startTapSync(song, at);
+          showBanner(AppBanner(tr('음악 앱에서 이 곡을 틀어 주세요. 어긋나면 듣고 있는 줄을 탭하세요.')));
         } else {
           fail(tr('음악 앱과 연결되지 않았어요. 연결하면 듣는 곡의 가사가 따라와요.'), action: tr('연결하기'), onAction: () {
             showBanner(null);
