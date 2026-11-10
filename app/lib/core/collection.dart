@@ -115,6 +115,24 @@ class CollectionSnapshot {
     if (s != null) change(s);
   }
 
+  /// Gives a song's lines the tapped start times (tap to sync); each line ends where the next
+  /// starts. Indexes stay, so translations and saved phrases keep their lines.
+  void setLineStarts(String songID, List<double> starts) {
+    final old = linesFor(songID);
+    if (old.isEmpty || starts.length != old.length) return;
+    lines.removeWhere((l) => l.songID == songID);
+    for (var i = 0; i < old.length; i++) {
+      final l = old[i];
+      lines.add(LyricLine(
+          songID: songID, index: l.index, start: starts[i], end: i + 1 < starts.length ? starts[i + 1] : null, text: l.text, detectedLanguage: l.detectedLanguage));
+    }
+    updateSong(songID, (s) {
+      s.lyricsType = LyricsType.synced;
+      s.offset = 0;
+    });
+    touch();
+  }
+
   /// Deleting a song asks whether to keep its saved phrases (default: keep, RQ-12).
   /// Kept phrases keep their line and translation data so they still render.
   void deleteSong(String id, {bool keepPhrases = true}) {

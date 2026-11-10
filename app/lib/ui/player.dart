@@ -41,6 +41,10 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
   int? _scrubLine;
   bool _goldBurst = false;
 
+  /// Tap to sync: writing line times by tapping as each line starts.
+  TapRecorder? _rec;
+  DateTime? _recFirstTap;
+
   String get id => widget.songID;
 
   @override
@@ -102,7 +106,8 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     }
     final lines = model.collection.linesFor(id);
     final mode = _mode(model, song);
-    final current = mode == _Mode.linkedSynced ? _currentIndex(model, song, lines) : null;
+    // While recording, the list follows the line to tap, not the playhead.
+    final current = mode == _Mode.linkedSynced && _rec == null ? _currentIndex(model, song, lines) : null;
     _onCurrentChanged(current, lines);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -114,13 +119,20 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
           SafeArea(
             child: Column(children: [
               _header(model, song, lines),
-              if (mode == _Mode.studyOnly) _studyOnlyNote(song),
+              if (_rec != null)
+                _recordingNote(lines)
+              else if (mode == _Mode.studyOnly)
+                _studyOnlyNote(song)
+              else if (model.tapSynced(song))
+                _tapSyncNote(model),
               if (model.translationSkipped(id)) _skippedNote(model),
               Expanded(child: _lyrics(model, song, lines, current, mode)),
               Container(
                 decoration: const BoxDecoration(border: Border(top: BorderSide(color: PlayerPalette.line))),
                 padding: const EdgeInsets.fromLTRB(21, 5, 21, 12),
-                child: PlaybackControls(songID: id, onScrub: (p) => _onScrub(song, lines, p), onSeek: (p) => _onSeek(song, lines, p)),
+                child: _rec != null
+                    ? _recordButton(model, song, lines)
+                    : PlaybackControls(songID: id, onScrub: (p) => _onScrub(song, lines, p), onSeek: (p) => _onSeek(song, lines, p)),
               ),
             ]),
           ),
@@ -175,21 +187,47 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     );
   }
 
-  /// DCR-7: study-only state, stated once and quietly.
+  /// DCR-7: study-only state, stated once and quietly. Synced lyrics follow a tap on the line
+  /// being heard; plain lyrics can get their times by tapping along.
   Widget _studyOnlyNote(Song song) {
     final synced = song.lyricsType == LyricsType.synced;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(21, 0, 21, 4),
-      child: Row(children: [
-        const Icon(Icons.menu_book_rounded, size: 14, color: PlayerPalette.placeholder),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(synced ? tr('재생하면 Spotify에서 노래가 나오고 가사가 따라와요') : tr('가사 공부 모드 · 싱크 정보가 없는 가사예요'),
-              style: const TextStyle(fontSize: 12, color: PlayerPalette.placeholder)),
-        ),
-      ]),
+    return _note(
+      synced ? Icons.touch_app_outlined : Icons.menu_book_rounded,
+      synced ? tr('듣고 있는 줄을 탭하면 가사가 따라와요') : tr('가사 공부 모드 · 싱크 정보가 없는 가사예요'),
+      [if (!synced) _noteAction(tr('싱크 만들기'), () => _startRecording(song, _model.collection.linesFor(id)))],
     );
   }
+
+  Widget _tapSyncNote(AppModel model) => _note(
+        Icons.touch_app_outlined,
+        tr('탭 싱크 · 어긋나면 듣고 있는 줄을 탭하세요'),
+        [_noteAction(tr('끄기'), model.stopTapSync)],
+      );
+
+  Widget _recordingNote(List<LyricLine> lines) => _note(
+        Icons.fiber_manual_record_rounded,
+        tr('줄이 시작될 때마다 탭하세요 · {0}/{1}', [_rec!.next, lines.length]),
+        [
+          if (_rec!.next > 0) _noteAction(tr('되돌리기'), _undoMark),
+          _noteAction(tr('취소'), _cancelRecording),
+        ],
+      );
+
+  Widget _note(IconData icon, String text, List<Widget> actions) => Padding(
+        padding: const EdgeInsets.fromLTRB(21, 0, 9, 4),
+        child: Row(children: [
+          Icon(icon, size: 14, color: PlayerPalette.placeholder),
+          const SizedBox(width: 6),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 12, color: PlayerPalette.placeholder))),
+          ...actions,
+        ]),
+      );
+
+  Widget _noteAction(String label, VoidCallback onPressed) => TextButton(
+        onPressed: onPressed,
+        style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8), minimumSize: const Size(0, 32), visualDensity: VisualDensity.compact),
+        child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: PlayerPalette.fg)),
+      );
 
   /// The song is already in the target language, so there are no translations to show.
   Widget _skippedNote(AppModel model) => Padding(
@@ -226,6 +264,79 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
       _placeList(i);
       setState(() {});
     }
+  }
+
+  /// Tap to sync: the tapped line is the one being heard, so the lyrics run from its time.
+  void _tapSyncFrom(Song song, List<LyricLine> lines, LyricLine line) {
+    final target = max(0.0, line.start! + song.offset);
+    HapticFeedback.selectionClick();
+    _model.startTapSync(song, target);
+    _onSeek(song, lines, target);
+  }
+
+  // ── Tap to sync: recording line times ──
+
+  void _startRecording(Song song, List<LyricLine> lines) {
+    if (lines.isEmpty) return;
+    _model.stopTapSync();
+    setState(() {
+      _rec = TapRecorder(lines.length);
+      _recFirstTap = null;
+      _following = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _placeList(0));
+  }
+
+  /// The music app's position when it plays the song, otherwise seconds since the first tap.
+  double _recordTime(Song song) {
+    final live = _model.isNowPlaying(song) ? _model.positionOf(song) : null;
+    if (live != null) return live;
+    final now = DateTime.now();
+    _recFirstTap ??= now;
+    return now.difference(_recFirstTap!).inMicroseconds / 1e6;
+  }
+
+  void _mark(Song song, List<LyricLine> lines) {
+    final rec = _rec;
+    if (rec == null) return;
+    HapticFeedback.selectionClick();
+    final t = _recordTime(song);
+    setState(() => rec.mark(t));
+    if (!rec.done) {
+      _placeList(rec.next);
+      return;
+    }
+    _model.saveTapTimings(id, rec.starts, now: rec.starts.last);
+    setState(() => _rec = null);
+    _lastIndex = null;
+    showMessage(context, tr('싱크를 저장했어요. 어긋나면 듣고 있는 줄을 탭하세요.'));
+  }
+
+  void _undoMark() {
+    final rec = _rec;
+    if (rec == null) return;
+    setState(rec.undo);
+    if (rec.next == 0) _recFirstTap = null;
+    _placeList(rec.next);
+  }
+
+  void _cancelRecording() => setState(() => _rec = null);
+
+  Widget _recordButton(AppModel model, Song song, List<LyricLine> lines) {
+    final first = _rec!.next == 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: SizedBox(
+        width: double.infinity,
+        height: 64,
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF15171C), shape: const StadiumBorder()),
+          onPressed: () => _mark(song, lines),
+          icon: const Icon(Icons.touch_app_rounded),
+          label: Text(first ? tr('첫 줄 시작') : tr('다음 줄 시작'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        ),
+      ),
+    );
   }
 
   void _seekToLine(Song song, List<LyricLine> lines, LyricLine line) {
@@ -319,13 +430,17 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
   }
 
   Widget _lyricRow(AppModel model, Song song, List<LyricLine> lines, LyricLine line, int? current, _Mode mode) {
-    // In study-only or plain mode every line is readable at full strength.
-    final active = mode != _Mode.linkedSynced || line.index == current;
+    // In study-only or plain mode every line is readable at full strength; while recording, the
+    // line to tap next stands out.
+    final rec = _rec;
+    final active = rec != null ? line.index == rec.next : mode != _Mode.linkedSynced || line.index == current;
     final target = model.target.code;
     final translation = model.translationSkipped(id) ? null : model.collection.translationText(id, line.index, target);
     // While the song plays, a tap moves the music to that line; tapping the current line (or a
     // long press) opens the explanation.
-    final seekable = mode == _Mode.linkedSynced && line.start != null && model.isPlayingSong(song);
+    final seekable = mode == _Mode.linkedSynced && line.start != null && (model.isPlayingSong(song) || model.tapSynced(song));
+    // With nothing to follow, a tap on a synced line starts tap to sync from it.
+    final tapSync = mode == _Mode.studyOnly && line.start != null && song.lyricsType == LyricsType.synced;
     final failed = model.collection.translation(id, line.index, target)?.outcome == Outcome.failed;
     final saved = model.collection.isSaved(id, line.index);
 
@@ -336,11 +451,22 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
         Expanded(
           child: Semantics(
             button: true,
-            hint: seekable ? tr('탭하면 이 줄로 이동해요 · 길게 누르면 세부 설명') : tr('탭하면 세부 설명을 볼 수 있어요'),
+            hint: tapSync
+                ? tr('듣고 있는 줄이면 탭해서 가사를 맞춰요 · 길게 누르면 세부 설명')
+                : seekable
+                    ? tr('탭하면 이 줄로 이동해요 · 길게 누르면 세부 설명')
+                    : tr('탭하면 세부 설명을 볼 수 있어요'),
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => seekable && line.index != current ? _seekToLine(song, lines, line) : _openLine(line.index, mode),
-              onLongPress: () => _openLine(line.index, mode),
+              // While recording, only the big button marks lines.
+              onTap: rec != null
+                  ? null
+                  : () => tapSync
+                      ? _tapSyncFrom(song, lines, line)
+                      : seekable && line.index != current
+                          ? _seekToLine(song, lines, line)
+                          : _openLine(line.index, mode),
+              onLongPress: rec != null ? null : () => _openLine(line.index, mode),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 AnimatedDefaultTextStyle(
                   duration: const Duration(milliseconds: 200),
@@ -463,6 +589,7 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
         SheetAction(tr('가사 0.5초 빠르게'), 'faster', icon: Icons.remove),
         SheetAction(tr('가사 0.5초 느리게'), 'slower', icon: Icons.add),
         if (song.offset != 0) SheetAction(tr('타이밍 초기화'), 'reset', icon: Icons.restart_alt),
+        SheetAction(tr('탭으로 싱크 만들기'), 'record', icon: Icons.touch_app_outlined),
         SheetAction(tr('가사가 이상해요?'), 'wrong', icon: Icons.help_outline),
         SheetAction(tr('현재 엔진으로 다시 번역'), 'retranslate', icon: Icons.translate),
         if (song.isConquered)
@@ -478,6 +605,8 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
         model.setOffset(id, song.offset + SyncEngine.offsetStep);
       case 'reset':
         model.setOffset(id, 0);
+      case 'record':
+        _startRecording(song, lines);
       case 'wrong':
         model.push(SearchRoute('${song.title} ${song.artist}'));
       case 'retranslate':

@@ -660,19 +660,55 @@ class AppModel extends ChangeNotifier {
       final o = _seek!;
       return o.position + (o.playing ? DateTime.now().difference(o.at).inMicroseconds / 1e6 : 0);
     }
-    if (!isNowPlaying(song)) return null;
-    return (SyncEngine()..update(nowPlaying!)).position();
+    if (isNowPlaying(song)) return (SyncEngine()..update(nowPlaying!)).position();
+    return tapSynced(song) ? _tapSync!.position() : null;
   }
 
   bool isPlayingSong(Song song) {
     if (_supersededBy(song)) return false;
-    return _seekValid(song) ? _seek!.playing : isNowPlaying(song) && (nowPlaying?.isPlaying ?? false);
+    if (_seekValid(song)) return _seek!.playing;
+    if (isNowPlaying(song)) return nowPlaying?.isPlaying ?? false;
+    return tapSynced(song) && _tapSync!.isPlaying;
+  }
+
+  // ── Tap to sync: lyrics on the phone's clock, for music the app can't follow ──
+
+  TapSyncClock? _tapSync;
+
+  /// [song] runs on the tap-to-sync clock. A music app that reports the song takes over.
+  bool tapSynced(Song song) => _tapSync?.songID == song.id && !isNowPlaying(song);
+
+  /// The user tapped the line being sung: the lyrics run from [position] (seconds).
+  void startTapSync(Song song, double position) {
+    _seek = null;
+    _tapSync = TapSyncClock(song.id, position);
+    notifyListeners();
+  }
+
+  void stopTapSync() {
+    if (_tapSync == null) return;
+    _tapSync = null;
+    notifyListeners();
+  }
+
+  /// Saves the times tapped for each line; the song then has synced lyrics. Unless a music app
+  /// follows the song, the lyrics keep running from [now] (the last tap's time plus the delay).
+  void saveTapTimings(String songID, List<double> starts, {double? now}) {
+    _mutate((c) => c.setLineStarts(songID, starts));
+    final song = collection.song(songID);
+    if (song != null && now != null && !isNowPlaying(song)) _tapSync = TapSyncClock(songID, now);
+    notifyListeners();
   }
 
   /// Moves [song] to [position] seconds; starts it (Spotify or practice mode) when it is not playing.
   void seekSong(Song song, double position) {
     final linked = isNowPlaying(song);
     final at = max(0.0, position);
+    if (!linked && tapSynced(song)) {
+      _tapSync!.seek(at);
+      notifyListeners();
+      return;
+    }
     if (linked && !(source?.capabilities.contains(SourceCapability.seek) ?? true)) {
       showBanner(AppBanner(tr('이 음악 앱은 구간 이동을 지원하지 않아요.')));
       return;
@@ -687,6 +723,11 @@ class AppModel extends ChangeNotifier {
   }
 
   void togglePlaySong(Song song) {
+    if (!isNowPlaying(song) && !_seekValid(song) && tapSynced(song)) {
+      _tapSync!.setPlaying(!_tapSync!.isPlaying);
+      notifyListeners();
+      return;
+    }
     if (!isNowPlaying(song) && !_seekValid(song)) {
       playSong(song);
       return;

@@ -181,3 +181,62 @@ class SyncEngine {
   /// Offset step used by the player's timing control (RQ-10).
   static const offsetStep = 0.5;
 }
+
+/// Tap to sync, for music the app can't follow (no Spotify link, no notification access): the
+/// user taps the line they hear and the lyrics run on the phone's own clock from that line's time.
+/// The clock can't hear the music app, so another tap corrects drift, pauses and skips.
+class TapSyncClock {
+  final String songID;
+  double _anchor;
+  DateTime _at;
+  bool _playing = true;
+
+  TapSyncClock(this.songID, double position, {DateTime? now})
+      : _anchor = max(0, position),
+        _at = now ?? DateTime.now();
+
+  bool get isPlaying => _playing;
+
+  double position([DateTime? now]) =>
+      _playing ? _anchor + max(0, (now ?? DateTime.now()).difference(_at).inMicroseconds / 1e6) : _anchor;
+
+  /// Moves the clock to [position] and runs it, as after a tap on the line being sung.
+  void seek(double position, {DateTime? now}) {
+    _anchor = max(0, position);
+    _at = now ?? DateTime.now();
+    _playing = true;
+  }
+
+  void setPlaying(bool on, {DateTime? now}) {
+    if (on == _playing) return;
+    final t = now ?? DateTime.now();
+    _anchor = position(t);
+    _at = t;
+    _playing = on;
+  }
+}
+
+/// Writes time tags for lyrics without them: while the song plays, the user taps once as each
+/// line starts. Times are what [mark] is given (the music app's position when it is followed,
+/// otherwise seconds since the first tap).
+class TapRecorder {
+  final int lineCount;
+  final _starts = <double>[];
+
+  TapRecorder(this.lineCount);
+
+  /// The line the next tap marks.
+  int get next => _starts.length;
+  bool get done => _starts.length >= lineCount;
+  List<double> get starts => List.unmodifiable(_starts);
+
+  void mark(double time) {
+    if (done) return;
+    // A tap can't go back in time: a line starts no earlier than the one before it.
+    _starts.add(_starts.isEmpty ? max(0, time) : max(_starts.last, time));
+  }
+
+  void undo() {
+    if (_starts.isNotEmpty) _starts.removeLast();
+  }
+}

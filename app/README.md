@@ -59,6 +59,7 @@ flutter analyze
 flutter test test/core_test.dart test/engines_test.dart test/features_test.dart test/spotify_test.dart \
   test/spotify_remote_test.dart test/streaming_test.dart test/i18n_test.dart test/performance_test.dart \
   test/music_app_test.dart
+  test/tap_sync_test.dart
 flutter build apk --release --target-platform android-arm64 --dart-define=SPOTIFY_CLIENT_ID=<client id>
 ```
 
