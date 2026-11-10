@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide Route;
 
 import '../app/app_model.dart';
 import '../app/i18n.dart';
+import '../app/platform_services.dart';
 import '../app/theme.dart';
 import '../core/lyrics.dart';
 import '../core/models.dart';
@@ -238,9 +239,26 @@ class _SearchViewState extends State<SearchView> {
               label: Text(tr('다시 시도'), style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600)),
             ),
           ],
+          if (!offline) ...[
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _searchWeb,
+              icon: Icon(Icons.travel_explore, color: t.textPrimary),
+              label: Text(tr('인터넷에서 가사 찾기'), style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600)),
+            ),
+          ],
         ]),
       ),
     );
+  }
+
+  /// Opens a web search for the typed query; the lyrics found there go in through "직접 추가하기".
+  Future<void> _searchWeb() async {
+    try {
+      await Links.open(LyricsWebSearch.url(title: _query.text, word: tr('가사')));
+    } catch (_) {
+      if (mounted) showMessage(context, tr('브라우저를 열지 못했어요.'));
+    }
   }
 
   Widget _resultRow(LyricsCandidate c) {

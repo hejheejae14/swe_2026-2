@@ -488,6 +488,138 @@ class SpotifyRemoteSource implements NowPlayingSource {
   }
 }
 
+// ─────────────────────────────── Any music app (media sessions) ───────────────────────────────
+
+/// Android media sessions: what any music app is playing, and its controls. Reading other apps'
+/// sessions needs notification access, which the user grants once in Android settings.
+class MusicApp {
+  static const _channel = MethodChannel('vynilo/media_session');
+  static const events = EventChannel('vynilo/media_session/state');
+
+  /// Tests set this to run the Android path on the desktop.
+  static bool? debugSupported;
+  static bool get supported => debugSupported ?? Platform.isAndroid;
+
+  static Future<bool> hasAccess() async {
+    if (!supported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('hasAccess') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> openAccessSettings() => _channel.invokeMethod('openAccessSettings');
+
+  static Future<void> call(String method, [Map<String, Object?>? args]) => _channel.invokeMethod(method, args);
+
+  /// The playing track's album art as JPEG, or null.
+  static Future<Uint8List?> artwork() async {
+    try {
+      return await _channel.invokeMethod<Uint8List>('artwork');
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// Follows whichever app is playing (Spotify, YouTube Music, Apple Music, Melon, …) and controls it.
+class MusicAppSource implements NowPlayingSource {
+  /// Nothing is playing any more (the music app closed its session).
+  final void Function()? onIdle;
+  final _controller = StreamController<PlaybackSnapshot>.broadcast();
+  StreamSubscription<Object?>? _sub;
+  PlaybackSnapshot? last;
+  bool _canSeek = true;
+  bool _canSkip = true;
+
+  MusicAppSource({this.onIdle});
+
+  /// Starts following the sessions. Throws a [PlatformException] without notification access.
+  Future<void> start() async {
+    await MusicApp.call('start');
+    _sub = MusicApp.events.receiveBroadcastStream().listen((e) {
+      if (e is! Map) return;
+      if (e['none'] == true) {
+        last = null;
+        onIdle?.call();
+        return;
+      }
+      _canSeek = e['canSeek'] != false;
+      _canSkip = e['canSkip'] != false;
+      final speed = (e['speed'] as num?)?.toDouble() ?? 1;
+      final snap = PlaybackSnapshot(
+        track: TrackKey(
+          title: '${e['title'] ?? ''}',
+          artist: '${e['artist'] ?? ''}',
+          album: e['album'] as String?,
+          duration: switch ((e['durationMs'] as num?) ?? 0) { > 0 && final ms => ms / 1000, _ => null },
+        ),
+        position: ((e['positionMs'] as num?) ?? 0) / 1000,
+        reportedAt: DateTime.now().subtract(Duration(milliseconds: ((e['ageMs'] as num?) ?? 0).toInt())),
+        isPlaying: e['playing'] == true,
+        // A paused session reports speed 0; the sync engine only advances while playing anyway.
+        rate: speed <= 0 ? 1 : speed,
+        appName: e['app'] as String?,
+        appPackage: e['package'] as String?,
+      );
+      last = snap;
+      if (!_controller.isClosed) _controller.add(snap);
+    }, onError: (_) {});
+  }
+
+  @override
+  SourceID get id => SourceID.musicApp;
+  @override
+  Set<SourceCapability> get capabilities => {
+        SourceCapability.read,
+        SourceCapability.playPause,
+        if (_canSkip) SourceCapability.skip,
+        if (_canSeek) SourceCapability.seek,
+      };
+
+  @override
+  Stream<PlaybackSnapshot> get snapshots async* {
+    if (last != null) yield last!;
+    yield* _controller.stream;
+  }
+
+  Future<void> _do(String method, [Map<String, Object?>? args]) async {
+    try {
+      await MusicApp.call(method, args);
+    } catch (_) {}
+  }
+
+  /// Asks a music app to find and play [query]: the followed app first, then [package], then any.
+  /// Returns a message when no app can.
+  Future<String?> playFromSearch(String query, {String? package}) async {
+    try {
+      await MusicApp.call('playFromSearch', {'query': query, 'package': package});
+      return null;
+    } on PlatformException {
+      return tr('이 곡을 틀어 줄 음악 앱을 찾지 못했어요. 음악 앱에서 직접 재생해 주세요.');
+    }
+  }
+
+  @override
+  Future<void> play() => _do('play');
+  @override
+  Future<void> pause() => _do('pause');
+  @override
+  Future<void> next() => _do('next');
+  @override
+  Future<void> previous() => _do('previous');
+  @override
+  Future<void> seek(double position) => _do('seek', {'positionMs': (position * 1000).round()});
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    _controller.close();
+    MusicApp.call('stop').catchError((_) {});
+  }
+}
+
 // ─────────────────────────────── Covers (RQ-6) ───────────────────────────────
 
 class CoverStore {

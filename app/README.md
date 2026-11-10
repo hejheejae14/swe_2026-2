@@ -1,9 +1,12 @@
 # Vynilo app (Flutter)
 
-Version 0.9.0, Android package `com.vynilo.lyrics`. Named DAY-OFF / LyricsTranslator up to 0.7.0.
+Version 0.11.0, Android package `com.vynilo.lyrics`, shown as **Vinylo**. Named DAY-OFF / LyricsTranslator up to 0.7.0.
 
 ## What it does
-- **Spotify login first.** The app opens on a "Spotify로 계속하기" screen. Music plays only through the Spotify app, via the Spotify App Remote SDK on Android; the Spotify Web API is used for login, search, your library (playlists, saved albums, liked songs), covers and finding track IDs.
+- **Any music app, no login.**
+  - The lyrics follow whatever app is playing (YouTube Music, Spotify, Apple Music, Melon…), read through Android's media sessions after the user grants notification access once.
+  - Songs started from the app are handed to the music app as a "play from search" request.
+  - Spotify is optional: connecting it adds your playlists and starts songs directly in the Spotify app (App Remote SDK). The Web API covers login, library and covers.
 - **Adding songs:**
   - Search lyrics on LRCLIB (retries when it is busy), or pick tracks from your Spotify library; the album art becomes the cover.
   - Manual add with LRC auto-detection, and a duplicate check.
@@ -41,7 +44,8 @@ app/
 │                  (Spotify auth / App Remote, secure store, model download, covers), Spotify library,
 │                  theme tokens, i18n (tr() + i18n_strings.dart)
 ├── lib/ui/        one file per screen; player_controls.dart is shared by the player and the line sheet
-├── android/app/src/main/kotlin/com/vynilo/lyrics/   MainActivity, SpotifyRemoteBridge (App Remote SDK)
+├── android/app/src/main/kotlin/com/vynilo/lyrics/   MainActivity, SpotifyRemoteBridge (App Remote SDK),
+│                                                   MediaSessionBridge (any music app)
 ├── android/app/src/main/kotlin/com/vynilo/llm/ + src/main/cpp/   llama.cpp JNI bridge
 ├── android/app/libs/   spotify-app-remote-release-0.8.0.aar
 └── test/          unit tests (core, engines, streaming, Spotify, App Remote channels, i18n, features, performance)
@@ -53,7 +57,8 @@ app/
 export PATH=$HOME/sdk/flutter/bin:$PATH ANDROID_HOME=$HOME/sdk/android
 flutter analyze
 flutter test test/core_test.dart test/engines_test.dart test/features_test.dart test/spotify_test.dart \
-  test/spotify_remote_test.dart test/streaming_test.dart test/i18n_test.dart test/performance_test.dart
+  test/spotify_remote_test.dart test/streaming_test.dart test/i18n_test.dart test/performance_test.dart \
+  test/music_app_test.dart
 flutter build apk --release --target-platform android-arm64 --dart-define=SPOTIFY_CLIENT_ID=<client id>
 ```
 

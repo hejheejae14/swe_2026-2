@@ -8,7 +8,6 @@ import 'ui/add_song.dart';
 import 'ui/components.dart';
 import 'ui/library.dart';
 import 'ui/mini_player.dart';
-import 'ui/login.dart';
 import 'ui/phrase_box.dart';
 import 'ui/player.dart';
 import 'ui/quiz.dart';
@@ -61,7 +60,7 @@ class _LyricsTranslatorAppState extends State<LyricsTranslatorApp> with WidgetsB
           return MaterialApp(
             // A new key rebuilds every screen (including const widgets) when the app language changes.
             key: ValueKey('ui-${I18n.lang}'),
-            title: 'Vynilo',
+            title: 'Vinylo',
             debugShowCheckedModeBanner: false,
             theme: theme.material,
             builder: (context, child) => AppThemeScope(
@@ -71,8 +70,8 @@ class _LyricsTranslatorAppState extends State<LyricsTranslatorApp> with WidgetsB
                 child: child!,
               ),
             ),
-            // Music plays through Spotify, so the app starts with the Spotify login (no skipping).
-            home: widget.model.needsSpotifyLogin ? const SpotifyLoginView() : const MainTabView(),
+            // No login: lyrics follow any music app; Spotify can be connected in 마이페이지.
+            home: const MainTabView(),
           );
         },
       ),

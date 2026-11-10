@@ -548,3 +548,11 @@ void showMessage(BuildContext context, String message) {
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(tr(message))));
 }
+
+/// Explains notification access before opening Android's settings for it (music-app sync).
+Future<bool> confirmMusicAppAccess(BuildContext context) => confirmDialog(
+      context,
+      title: tr('음악 앱과 연결할까요?'),
+      message: tr('지금 듣는 곡과 재생 위치를 읽으려면 Android의 \'알림 접근\' 권한이 필요해요. 다음 화면에서 Vinylo를 켜 주세요. 알림 내용은 읽거나 저장하지 않아요.'),
+      confirm: tr('설정 열기'),
+    );

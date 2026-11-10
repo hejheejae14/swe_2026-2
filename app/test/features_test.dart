@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 import 'package:lyrics_translator/app/app_model.dart';
 import 'package:lyrics_translator/app/platform_services.dart';
 import 'package:lyrics_translator/app/theme.dart';
+import 'package:lyrics_translator/app/web_artwork.dart';
 import 'package:lyrics_translator/core/collection.dart';
 import 'package:lyrics_translator/core/lyrics.dart';
 import 'package:lyrics_translator/core/models.dart';
@@ -172,5 +173,25 @@ void main() {
     expect(asked.first['album_name'], 'The Ocean');
     expect(asked.last['duration'], '183');
     expect(TrackNormalizer.cleanTitle('Yesterday - Remastered 2009'), 'Yesterday');
+  });
+
+  test('web lyrics search: primary artist, title and the lyrics word; blanks dropped', () {
+    final u = LyricsWebSearch.url(title: ' 晴天 ', artist: 'Jay Chou & Someone', word: '가사');
+    expect(u.host, 'www.google.com');
+    expect(u.queryParameters['q'], 'Jay Chou 晴天 가사');
+    expect(LyricsWebSearch.url(title: 'Yellow').queryParameters['q'], 'Yellow lyrics');
+  });
+
+  test('iTunes cover search: same title preferred, art asked at 600 px', () async {
+    Uri? asked;
+    final art = WebArtwork(client: MockClient((r) async {
+      asked = r.url;
+      return http.Response(
+          '{"results":[{"trackName":"Yellow (Live)","artworkUrl100":"https://a/x/100x100bb.jpg"},'
+          '{"trackName":"Yellow","artworkUrl100":"https://a/y/100x100bb.jpg"}]}',
+          200);
+    }));
+    expect(await art.find('Yellow - Remastered 2021', 'Coldplay, Someone'), 'https://a/y/600x600bb.jpg');
+    expect(asked?.queryParameters['term'], 'Coldplay Yellow');
   });
 }

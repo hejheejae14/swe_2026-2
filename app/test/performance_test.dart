@@ -10,6 +10,7 @@ import 'package:lyrics_translator/core/collection.dart';
 import 'package:lyrics_translator/core/llm.dart';
 import 'package:lyrics_translator/core/lyrics.dart';
 import 'package:lyrics_translator/core/models.dart';
+import 'package:lyrics_translator/core/playback.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Original sample lyrics written for these tests.
@@ -115,7 +116,9 @@ void main() {
       SharedPreferences.setMockInitialValues({'spotify.trackIDs.v1': '{"song-a":"trackA","song-b":"trackB"}'});
       final snap = CollectionSnapshot();
       snap.addSong(song, LRCParser.parse('[00:05.00]오늘은 천천히 걸어가도 괜찮아\n[00:10.00]창문 너머로 햇살이 내려와\n[00:15.00]우리의 노래가 다시 시작돼\n[00:20.00]조용한 거리에 너의 목소리\n[00:25.00]내일도 여기서 만나자'));
-      model = AppModel.test(collection: snap, settings: AppSettings()..hasOnboarded = true, prefs: await SharedPreferences.getInstance(), baseDir: Directory.systemTemp.createTempSync());
+      model = AppModel.test(collection: snap, settings: AppSettings()
+            ..hasOnboarded = true
+            ..connectedSources.add(SourceID.spotify), prefs: await SharedPreferences.getInstance(), baseDir: Directory.systemTemp.createTempSync());
     });
 
     tearDown(() {

@@ -62,9 +62,9 @@ class _ShareSheetState extends State<_ShareSheet> {
       final data = await img.toByteData(format: ui.ImageByteFormat.png);
       img.dispose();
       final dir = await getTemporaryDirectory();
-      final f = File('${dir.path}/vynilo-collection.png');
+      final f = File('${dir.path}/vinylo-collection.png');
       await f.writeAsBytes(data!.buffer.asUint8List());
-      await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: 'image/png')], text: tr('내 Vynilo 컬렉션')));
+      await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: 'image/png')], text: tr('내 Vinylo 컬렉션')));
     } catch (_) {
       if (mounted) showMessage(context, tr('이미지를 만들지 못했어요.'));
     } finally {
@@ -108,7 +108,7 @@ class CollectionPoster extends StatelessWidget {
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          const Text('Vynilo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: fg, letterSpacing: 0.5)),
+          const Text('Vinylo', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: fg, letterSpacing: 0.5)),
           const Spacer(),
           Text(QuizProgress.dayKey(DateTime.now()).replaceAll('-', '.'), style: const TextStyle(fontSize: 11, color: sub)),
         ]),

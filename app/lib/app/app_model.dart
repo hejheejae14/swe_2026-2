@@ -19,6 +19,7 @@ import '../core/recommend.dart';
 import 'i18n.dart';
 import 'platform_services.dart';
 import 'spotify_library.dart';
+import 'web_artwork.dart';
 import 'theme.dart';
 
 /// Navigation inside the Library tab (SSRD 4.1.2: the add flow is linear,
@@ -198,9 +199,17 @@ class AppModel extends ChangeNotifier {
   final Map<String, CancelToken> _jobs = {};
   StreamSubscription<PlaybackSnapshot>? _sourceSub;
   StreamSubscription<Uri>? _linkSub;
+  /// The source the screens follow and control: whichever reported playing most recently.
   NowPlayingSource? source;
+
+  /// Spotify's App Remote (or a test source), attached explicitly.
+  NowPlayingSource? _primary;
+
+  /// Any music app, through Android's media sessions (needs notification access).
+  MusicAppSource? _musicApp;
   late final SpotifyAuth spotifyAuth = SpotifyAuth(secureStore);
   late final SpotifyLibrary spotifyLibrary = SpotifyLibrary(spotifyAuth);
+  late final WebArtwork webArtwork = WebArtwork();
 
   AppModel._({
     required this.repository,
@@ -225,7 +234,7 @@ class AppModel extends ChangeNotifier {
             ..hasOnboarded = true);
           await attachSpotify(retryRemote: true);
           showBanner(AppBanner(tr('Spotify에 연결됐어요. 플레이리스트와 앨범을 불러올 수 있어요.')));
-          fillSpotifyCovers();
+          fillCovers();
         }
       } catch (e) {
         showBanner(AppBanner('$e'));
@@ -284,7 +293,8 @@ class AppModel extends ChangeNotifier {
       baseDir: base,
     )
       ..listenForLinks()
-      ..refreshSourceConnection();
+      ..refreshSourceConnection()
+      ..fillCovers();
   }
 
   // ── Persistence ──
@@ -398,7 +408,7 @@ class AppModel extends ChangeNotifier {
     });
     startTranslation(song.id);
     if (draft.spotifyTrackID != null) _rememberSpotifyID(song.id, draft.spotifyTrackID!);
-    if (song.coverPath == null) fillSpotifyCovers();
+    if (song.coverPath == null) fillCovers();
     return song.id;
   }
 
@@ -586,8 +596,8 @@ class AppModel extends ChangeNotifier {
     return TrackMatcher.matches(song.trackKey, snap.track);
   }
 
-  /// True until the user has logged in to Spotify (the app starts with the Spotify login screen).
-  bool get needsSpotifyLogin => spotifyAuth.isConfigured && !spotifyAuth.hasToken;
+  /// The user connected Spotify (optional since 0.11.0): songs then start in the Spotify app.
+  bool get spotifyConnected => settings.connectedSources.contains(SourceID.spotify);
 
   /// Opens the Spotify login (PKCE) or, when already logged in, connects to the Spotify app.
   Future<void> connect(SourceID id) async {
@@ -602,20 +612,16 @@ class AppModel extends ChangeNotifier {
     }
     updateSettings((st) => st.connectedSources.add(id));
     await attachSpotify();
-    fillSpotifyCovers();
+    fillCovers();
   }
 
-  /// Logging out of Spotify returns the app to the login screen.
+  /// Logs out of Spotify; any other music app is still followed.
   Future<void> disconnect(SourceID id) async {
     if (id != SourceID.spotify) return;
     await spotifyAuth.logout();
     await SpotifyRemote.disconnect();
     _spotifyLists = null;
-    _sourceSub?.cancel();
-    source?.dispose();
-    source = null;
-    activeSourceID = null;
-    nowPlaying = null;
+    _detachPrimary();
     updateSettings((s) => s.connectedSources.remove(id));
   }
 
@@ -667,6 +673,10 @@ class AppModel extends ChangeNotifier {
   void seekSong(Song song, double position) {
     final linked = isNowPlaying(song);
     final at = max(0.0, position);
+    if (linked && !(source?.capabilities.contains(SourceCapability.seek) ?? true)) {
+      showBanner(AppBanner(tr('이 음악 앱은 구간 이동을 지원하지 않아요.')));
+      return;
+    }
     _seek = _SeekOverride(song.id, at, DateTime.now(), linked ? isPlayingSong(song) : true);
     notifyListeners();
     if (linked) {
@@ -715,36 +725,68 @@ class AppModel extends ChangeNotifier {
     return hit.id;
   }
 
-  /// Plays a song through the Spotify app (App Remote SDK). The screens switch at once; Spotify
-  /// confirms a moment later through its player-state events.
+  /// Plays a song. With Spotify connected it starts in the Spotify app (App Remote SDK); otherwise
+  /// the music app being followed is asked to find and play it. The screens switch at once and the
+  /// music app confirms a moment later.
   Future<void> playSong(Song song, {double at = 0}) async {
     _seek = _SeekOverride(song.id, at, DateTime.now(), true);
     notifyListeners();
     void fail(String message, {String? action, VoidCallback? onAction}) {
       if (_seek?.songID == song.id) _seek = null;
+      _pendingStart = null;
       showBanner(AppBanner(message, actionTitle: action, onAction: onAction));
     }
 
     try {
-      final player = await attachSpotify();
-      if (player == null) {
-        fail(spotifyRemoteIssue ?? tr('Spotify 앱과 연결하지 못했어요 ({0}).', ['—']), action: tr('다시 연결'), onAction: () {
-          showBanner(null);
-          attachSpotify(retryRemote: true);
-        });
+      if (spotifyConnected) {
+        final player = await attachSpotify();
+        if (player != null) {
+          final id = await _trackIDFor(song);
+          if (id == null) {
+            fail(tr('Spotify에서 이 곡을 찾지 못했어요.'));
+            return;
+          }
+          final err = await player.playTrack('spotify:track:$id', position: at);
+          if (err != null) fail(err);
+          return;
+        }
+      }
+      final app = await attachMusicApp() ? _musicApp : null;
+      if (app == null) {
+        if (spotifyConnected && !MusicApp.supported) {
+          fail(spotifyRemoteIssue ?? tr('Spotify 앱과 연결하지 못했어요 ({0}).', ['—']), action: tr('다시 연결'), onAction: () {
+            showBanner(null);
+            attachSpotify(retryRemote: true);
+          });
+        } else {
+          fail(tr('음악 앱과 연결되지 않았어요. 연결하면 듣는 곡의 가사가 따라와요.'), action: tr('연결하기'), onAction: () {
+            showBanner(null);
+            requestMusicAppAccess();
+          });
+        }
         return;
       }
-      final id = await _trackIDFor(song);
-      if (id == null) {
-        fail(tr('Spotify에서 이 곡을 찾지 못했어요.'));
+      // Already the track in the music app: just resume there.
+      if (app.last != null && TrackMatcher.matches(song.trackKey, app.last!.track)) {
+        source = app;
+        activeSourceID = app.id;
+        if (at > 0) await app.seek(at);
+        await app.play();
         return;
       }
-      final err = await player.playTrack('spotify:track:$id', position: at);
+      _pendingStart = _PendingStart(song.id, at, DateTime.now());
+      final err = await app.playFromSearch('${TrackNormalizer.primaryArtist(song.artist)} ${song.title}'.trim(), package: _lastMusicPackage);
       if (err != null) fail(err);
     } catch (e) {
       fail('$e');
     }
   }
+
+  /// A song asked to start in another music app; seeks to [at] once the app reports it.
+  _PendingStart? _pendingStart;
+
+  String? get _lastMusicPackage => prefs.getString(_musicPackageKey);
+  static const _musicPackageKey = 'musicApp.lastPackage.v1';
 
   /// Tests drive playback with a simulated source.
   @visibleForTesting
@@ -752,20 +794,128 @@ class AppModel extends ChangeNotifier {
 
   void _attach(NowPlayingSource s) {
     _sourceSub?.cancel();
-    if (source != s) source?.dispose();
+    if (_primary != s) _primary?.dispose();
+    _primary = s;
     source = s;
     activeSourceID = s.id;
-    _sourceSub = s.snapshots.listen((snap) {
-      nowPlaying = snap;
-      notifyListeners();
-    });
+    _sourceSub = s.snapshots.listen((snap) => _onSnapshot(s, snap));
     notifyListeners();
   }
 
-  /// Reconnects to the Spotify app at launch and when the app becomes active again (RQ-2).
+  void _detachPrimary() {
+    _sourceSub?.cancel();
+    _primary?.dispose();
+    if (source == _primary) {
+      source = _musicApp;
+      activeSourceID = _musicApp?.id;
+      nowPlaying = _musicApp?.last;
+    }
+    _primary = null;
+    notifyListeners();
+  }
+
+  /// A report from either source. The screens follow whichever app is playing; a paused report
+  /// from another source doesn't take over from one that is playing.
+  void _onSnapshot(NowPlayingSource from, PlaybackSnapshot snap) {
+    // With the App Remote connected, Spotify's own media session would only duplicate it.
+    if (from == _musicApp && _primary is SpotifyRemoteSource && snap.appPackage == 'com.spotify.music') return;
+    if (from != source && source != null && (nowPlaying?.isPlaying ?? false) && !snap.isPlaying) return;
+    source = from;
+    activeSourceID = from.id;
+    nowPlaying = snap;
+    if (from == _musicApp && snap.appPackage != null && snap.isPlaying && prefs.getString(_musicPackageKey) != snap.appPackage) {
+      prefs.setString(_musicPackageKey, snap.appPackage!);
+    }
+    final p = _pendingStart;
+    if (p != null) {
+      final song = collection.song(p.songID);
+      if (song == null || DateTime.now().difference(p.at) > const Duration(seconds: 20)) {
+        _pendingStart = null;
+      } else if (TrackMatcher.matches(song.trackKey, snap.track)) {
+        _pendingStart = null;
+        if (p.position > 1) from.seek(p.position);
+      }
+    }
+    if (from == _musicApp) _artFromMusicApp(snap);
+    notifyListeners();
+  }
+
+  // ── Any music app (Android media sessions) ──
+
+  /// Notification access is granted, so other music apps can be followed.
+  bool musicAppAccess = false;
+
+  /// Starts following other music apps when notification access is granted. Returns whether it is.
+  Future<bool> attachMusicApp() async {
+    if (_musicApp != null) return true;
+    if (!MusicApp.supported) return false;
+    musicAppAccess = await MusicApp.hasAccess();
+    if (!musicAppAccess) {
+      notifyListeners();
+      return false;
+    }
+    final app = MusicAppSource(onIdle: _onMusicAppIdle);
+    try {
+      await app.start();
+    } catch (_) {
+      app.dispose();
+      musicAppAccess = false;
+      notifyListeners();
+      return false;
+    }
+    _musicApp = app;
+    // Lives as long as the app: the music-app source is never replaced.
+    app.snapshots.listen((snap) => _onSnapshot(app, snap));
+    notifyListeners();
+    return true;
+  }
+
+  void _onMusicAppIdle() {
+    if (source != _musicApp) return;
+    source = _primary;
+    activeSourceID = _primary?.id;
+    nowPlaying = null;
+    notifyListeners();
+  }
+
+  /// The library suggests connecting a music app until access is granted or the card is closed.
+  bool get showMusicAppPrompt => MusicApp.supported && !musicAppAccess && !(prefs.getBool(_musicPromptKey) ?? false);
+  static const _musicPromptKey = 'musicApp.promptDismissed.v1';
+
+  void dismissMusicAppPrompt() {
+    prefs.setBool(_musicPromptKey, true);
+    notifyListeners();
+  }
+
+  /// Explains notification access, then opens the Android settings screen for it. The app
+  /// connects when the user comes back (see [refreshSourceConnection]).
+  Future<void> requestMusicAppAccess() async {
+    if (!MusicApp.supported) return;
+    try {
+      await MusicApp.openAccessSettings();
+    } catch (_) {
+      showBanner(AppBanner(tr('설정을 열지 못했어요.')));
+    }
+  }
+
+  /// Follows other music apps (when allowed) and reconnects to the Spotify app, at launch and
+  /// when the app becomes active again (RQ-2).
   Future<void> refreshSourceConnection() async {
-    if (source is SpotifyRemoteSource || !spotifyAuth.isConfigured || !spotifyAuth.hasToken) return;
+    if (_musicApp == null) await attachMusicApp();
+    if (_primary is SpotifyRemoteSource || !spotifyConnected || !spotifyAuth.isConfigured || !spotifyAuth.hasToken) return;
     await attachSpotify();
+  }
+
+  final Set<String> _artTried = {};
+
+  /// Saves the music app's album art for a collection song that has no cover yet.
+  Future<void> _artFromMusicApp(PlaybackSnapshot snap) async {
+    final song = TrackMatcher.match(snap.track, collection.songs);
+    if (song == null || song.coverPath != null || !_artTried.add(song.id)) return;
+    final bytes = await MusicApp.artwork();
+    if (bytes == null || collection.song(song.id)?.coverPath != null) return;
+    final name = CoverStore.saveBytes(bytes, song.id, ext: 'jpg');
+    if (name != null) _mutate((s) => s.updateSong(song.id, (x) => x.coverPath = name));
   }
 
   // ── Covers chosen while translating (Notion "LLM이 번역하는 동안") ──
@@ -810,16 +960,19 @@ class AppModel extends ChangeNotifier {
   final Set<String> _coverTried = {};
   bool _fillingCovers = false;
 
-  /// Gives songs without a cover their Spotify album art (one search per song per session).
-  Future<void> fillSpotifyCovers() async {
-    if (_fillingCovers || !spotifyAuth.isConfigured || !spotifyAuth.hasToken) return;
+  /// Gives songs without a cover their album art (one search per song per session): from Spotify
+  /// when it is connected, otherwise from the iTunes Search API.
+  Future<void> fillCovers() async {
+    if (_fillingCovers) return;
+    final useSpotify = spotifyAuth.isConfigured && spotifyAuth.hasToken;
     _fillingCovers = true;
     try {
       for (final song in [...collection.songs]) {
         if (song.coverPath != null || song.sourceProvider == 'demo' || !_coverTried.add(song.id)) continue;
         try {
-          final hit = await spotifyLibrary.findTrack(song.title, song.artist);
-          final url = hit?.imageUrl;
+          final url = useSpotify
+              ? (await spotifyLibrary.findTrack(song.title, song.artist))?.imageUrl
+              : await webArtwork.find(song.title, song.artist);
           if (url == null) continue;
           final bytes = await SpotifyLibrary.download(url);
           if (bytes == null || collection.song(song.id)?.coverPath != null) continue;
@@ -844,7 +997,7 @@ class AppModel extends ChangeNotifier {
   String? spotifyRemoteIssue;
   bool _remoteFailed = false;
 
-  bool get usingSpotifyApp => source is SpotifyRemoteSource;
+  bool get usingSpotifyApp => _primary is SpotifyRemoteSource;
 
   /// Hook for tests: replaces the platform connection.
   @visibleForTesting
@@ -854,7 +1007,7 @@ class AppModel extends ChangeNotifier {
   /// [spotifyRemoteIssue] set) when the Spotify app is missing or refuses. A failed connection is
   /// not retried on every play, only when [retryRemote] is set or the app becomes active again.
   Future<SpotifyRemoteSource?> attachSpotify({bool retryRemote = false}) async {
-    final current = source;
+    final current = _primary;
     if (current is SpotifyRemoteSource) return current;
     if (_remoteFailed && !retryRemote) return null;
     if (!SpotifyRemote.supported) {
@@ -887,14 +1040,10 @@ class AppModel extends ChangeNotifier {
 
   /// The Spotify app closed the connection; the next play reconnects.
   void _onSpotifyAppLost() {
-    if (source is! SpotifyRemoteSource) return;
+    if (_primary is! SpotifyRemoteSource) return;
     _remoteFailed = false;
-    _sourceSub?.cancel();
-    source?.dispose();
-    source = null;
-    activeSourceID = null;
-    nowPlaying = null;
-    notifyListeners();
+    if (source == _primary) nowPlaying = null;
+    _detachPrimary();
   }
 
   // ── Recommendations ──
@@ -1030,4 +1179,11 @@ class _SeekOverride {
   final DateTime at;
   final bool playing;
   const _SeekOverride(this.songID, this.position, this.at, this.playing);
+}
+
+class _PendingStart {
+  final String songID;
+  final double position;
+  final DateTime at;
+  const _PendingStart(this.songID, this.position, this.at);
 }

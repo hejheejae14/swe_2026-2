@@ -1,11 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart' hide Route;
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../app/app_model.dart';
 import '../app/i18n.dart';
+import '../app/platform_services.dart';
 import '../app/spotify_library.dart';
 import '../app/theme.dart';
 import '../core/llm.dart';
@@ -72,7 +74,13 @@ class _AddSongViewState extends State<AddSongView> {
           if (type != null)
             Text(type == LyricsType.synced ? tr('싱크 가사') : tr('일반 가사'), style: TextStyle(fontSize: 11, color: t.textTertiary)),
         ]),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
+        // Lyrics LRCLIB doesn't have: find them on the web, copy, come back and paste.
+        Wrap(spacing: 4, children: [
+          _lyricsAction(Icons.travel_explore, tr('인터넷에서 가사 찾기'), _title.text.trim().isEmpty ? null : _searchWeb),
+          _lyricsAction(Icons.content_paste, tr('붙여넣기'), _paste),
+        ]),
+        const SizedBox(height: 4),
         OutlinedField(
           controller: _lyrics,
           hint: tr('가사를 불러오지 못하면 여기에 직접 붙여넣기\n[00:12.34] 형식의 LRC 가사도 인식해요'),
@@ -120,6 +128,36 @@ class _AddSongViewState extends State<AddSongView> {
       const SizedBox(height: 8),
       Text(tr('탭해서 나만의 커버로'), style: TextStyle(fontSize: 12, color: t.textSecondary)),
     ]);
+  }
+
+  Widget _lyricsAction(IconData icon, String label, VoidCallback? onPressed) {
+    final t = context.theme;
+    final color = onPressed == null ? t.textTertiary : t.textPrimary;
+    return TextButton.icon(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8), visualDensity: VisualDensity.compact),
+      icon: Icon(icon, size: 18, color: color),
+      label: Text(label, style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Future<void> _searchWeb() async {
+    try {
+      await Links.open(LyricsWebSearch.url(title: _title.text, artist: _artist.text, word: tr('가사')));
+    } catch (_) {
+      if (mounted) showMessage(context, tr('브라우저를 열지 못했어요.'));
+    }
+  }
+
+  /// Replaces the lyrics with the clipboard, as copied from a lyrics page.
+  Future<void> _paste() async {
+    final text = (await Clipboard.getData(Clipboard.kTextPlain))?.text?.trim() ?? '';
+    if (!mounted) return;
+    if (text.isEmpty) {
+      showMessage(context, tr('클립보드가 비어 있어요.'));
+      return;
+    }
+    setState(() => _lyrics.text = text);
   }
 
   /// Covers are downscaled to ≤1024×1024 and stay on the device (RQ-6).

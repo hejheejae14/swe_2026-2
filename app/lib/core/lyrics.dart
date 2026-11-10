@@ -281,6 +281,16 @@ class LyricsError implements Exception {
   String toString() => 'LyricsError($kind, $status)';
 }
 
+/// A web search for a song's lyrics, for when LRCLIB has none (ONRQ-1): the user copies the
+/// lyrics from the browser and pastes them into the add screen.
+class LyricsWebSearch {
+  /// [word] is "lyrics" in the interface language (가사, lyrics, 歌词, 歌詞).
+  static Uri url({required String title, String artist = '', String word = 'lyrics'}) {
+    final terms = [TrackNormalizer.primaryArtist(artist.trim()), title.trim(), word].where((s) => s.isNotEmpty);
+    return Uri.https('www.google.com', '/search', {'q': terms.join(' ')});
+  }
+}
+
 /// LRCLIB adapter (SIR-7). Plain HTTPS GET, no key; polite User-Agent; results cached in memory.
 class LRCLIBClient implements LyricsProvider {
   final http.Client _client;
@@ -295,7 +305,7 @@ class LRCLIBClient implements LyricsProvider {
   LRCLIBClient({
     http.Client? client,
     Uri? baseURL,
-    this.userAgent = 'Vynilo/0.8 (lyrics study app)',
+    this.userAgent = 'Vinylo/0.11 (lyrics study app)',
     Future<void> Function(Duration)? sleep,
   })  : _client = client ?? http.Client(),
         baseURL = baseURL ?? Uri.parse('https://lrclib.net/api'),

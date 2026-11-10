@@ -3,7 +3,8 @@ import 'dart:math';
 
 import 'models.dart';
 
-enum SourceID { spotify, appleMusic, simulator }
+/// [musicApp] is whatever app is playing, followed through Android's media sessions.
+enum SourceID { spotify, appleMusic, musicApp, simulator }
 
 enum SourceCapability { read, playPause, skip, seek }
 
@@ -20,7 +21,12 @@ class PlaybackSnapshot {
   /// The music app's own track id (Spotify), when it has one.
   final String? trackID;
 
-  PlaybackSnapshot({required this.track, required this.position, DateTime? reportedAt, this.rate = 1, required this.isPlaying, this.trackID})
+  /// The playing app's name and Android package, for sources that follow any app.
+  final String? appName;
+  final String? appPackage;
+
+  PlaybackSnapshot(
+      {required this.track, required this.position, DateTime? reportedAt, this.rate = 1, required this.isPlaying, this.trackID, this.appName, this.appPackage})
       : reportedAt = reportedAt ?? DateTime.now();
 }
 

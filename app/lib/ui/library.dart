@@ -45,7 +45,7 @@ class _LibraryViewState extends State<LibraryView> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
             child: Row(children: [
-              Text('Vynilo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: t.textPrimary)),
+              Text('Vinylo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: t.textPrimary)),
               const Spacer(),
               if (songs.isNotEmpty)
                 IconButton(
@@ -70,6 +70,7 @@ class _LibraryViewState extends State<LibraryView> {
                   style: TextStyle(fontSize: 13, letterSpacing: -0.2, color: t.textSecondary)),
             ]),
           ),
+          if (model.showMusicAppPrompt) const _MusicAppCard(),
           if (songs.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
@@ -1054,4 +1055,44 @@ class CuratedShelvesView extends StatelessWidget {
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         for (final shelf in shelves) RecommendRow(title: shelf.title, subtitle: shelf.subtitle, entries: shelf.songs, onSelect: (e) => onSelect(e, shelf)),
       ]);
+}
+
+/// Suggests following the user's music app (any app, through notification access).
+class _MusicAppCard extends StatelessWidget {
+  const _MusicAppCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.theme;
+    final model = context.model;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+        decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: t.stroke)),
+        child: Row(children: [
+          Icon(Icons.graphic_eq_rounded, color: t.brand),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(tr('음악 앱과 연결하기'), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: t.textPrimary)),
+              const SizedBox(height: 2),
+              Text(tr('어떤 앱으로 들어도 가사가 따라와요'), style: TextStyle(fontSize: 12, color: t.textSecondary)),
+            ]),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (await confirmMusicAppAccess(context)) await model.requestMusicAppAccess();
+            },
+            child: Text(tr('연결'), style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w700)),
+          ),
+          IconButton(
+            tooltip: tr('닫기'),
+            onPressed: model.dismissMusicAppPrompt,
+            icon: Icon(Icons.close, size: 18, color: t.textTertiary),
+          ),
+        ]),
+      ),
+    );
+  }
 }

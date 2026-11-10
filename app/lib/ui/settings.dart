@@ -152,16 +152,52 @@ class _SettingsViewState extends State<SettingsView> {
             onChanged: (v) => model.updateSettings((x) => x.showTranslation = v),
           ),
         ]),
+        if (MusicApp.supported)
+          _section(tr('음악 앱'), [
+            ListTile(
+              leading: Icon(model.musicAppAccess ? Icons.check_circle_rounded : Icons.music_note_outlined,
+                  color: model.musicAppAccess ? t.brand : t.textSecondary),
+              title: Text(tr('듣는 곡 따라가기'), style: TextStyle(color: t.textPrimary)),
+              subtitle: Text(
+                model.musicAppAccess
+                    ? (model.activeSourceID == SourceID.musicApp && model.nowPlaying?.appName != null
+                        ? tr('연결됨 · 지금 {0}', [model.nowPlaying!.appName!])
+                        : tr('연결됨'))
+                    : tr('연결 안 됨'),
+                style: TextStyle(fontSize: 12, color: t.textTertiary),
+              ),
+              trailing: model.musicAppAccess
+                  ? null
+                  : TextButton(
+                      onPressed: () => _connectMusicApp(model),
+                      child: Text(tr('연결하기'), style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600)),
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: Text(tr('YouTube Music, Spotify, Apple Music, 멜론 등 어떤 앱으로 들어도 가사가 따라와요. 알림 접근 권한으로 지금 재생 중인 곡과 위치만 읽어요.'),
+                  style: TextStyle(fontSize: 12, color: t.textTertiary)),
+            ),
+          ]),
         _section('Spotify', [
           ListTile(
             leading: Image.asset('assets/brand/spotify_icon_green.png', width: 28, height: 28),
             title: Text(tr('Spotify 계정'), style: TextStyle(color: t.textPrimary)),
-            subtitle: Text(tr('로그인됨'), style: TextStyle(fontSize: 12, color: t.textTertiary)),
-            trailing: TextButton(
-              onPressed: () => _logout(model),
-              child: Text(tr('로그아웃'), style: TextStyle(color: t.textSecondary)),
-            ),
+            subtitle: Text(model.spotifyConnected ? tr('로그인됨') : tr('선택 사항 · 연결하면 내 플레이리스트를 불러오고 곡을 Spotify에서 바로 재생해요'),
+                style: TextStyle(fontSize: 12, color: t.textTertiary)),
+            trailing: model.spotifyConnected
+                ? TextButton(
+                    onPressed: () => _logout(model),
+                    child: Text(tr('로그아웃'), style: TextStyle(color: t.textSecondary)),
+                  )
+                : model.spotifyAuth.isConfigured
+                    ? TextButton(
+                        onPressed: () => model.connect(SourceID.spotify),
+                        child: Text(tr('연결하기'), style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600)),
+                      )
+                    : null,
           ),
+          if (model.spotifyConnected) ...[
           ListTile(
             leading: Icon(model.usingSpotifyApp ? Icons.check_circle_rounded : Icons.info_outline_rounded,
                 color: model.usingSpotifyApp ? t.brand : t.textTertiary),
@@ -182,6 +218,7 @@ class _SettingsViewState extends State<SettingsView> {
             child: Text(tr('노래는 휴대폰의 Spotify 앱으로 재생돼요 (Spotify Premium 필요). 지금 듣는 곡의 가사가 자동으로 따라와요.'),
                 style: TextStyle(fontSize: 12, color: t.textTertiary)),
           ),
+          ],
         ]),
         _section(tr('데이터'), [
           _row(tr('저장 공간 사용량'), trailing: StorageMeter.format(model.storageUsedBytes)),
@@ -195,7 +232,7 @@ class _SettingsViewState extends State<SettingsView> {
           _destructive(tr('전체 삭제'), _deleteAll),
         ]),
         _section(null, [
-          _row(tr('버전'), trailing: '0.9.0 (${Platform.isIOS ? 'iOS' : 'Android'})'),
+          _row(tr('버전'), trailing: '0.11.0 (${Platform.isIOS ? 'iOS' : 'Android'})'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Text(tr('가사는 LRCLIB에서 가져와요. 컬렉션은 이 기기에만 저장되고, 가사는 선택한 번역 엔진으로만 전송돼요.'),
@@ -318,17 +355,21 @@ class _SettingsViewState extends State<SettingsView> {
 
   Future<void> _logout(AppModel model) async {
     final ok = await confirmDialog(context,
-        title: tr('Spotify에서 로그아웃할까요?'), message: tr('Vynilo는 Spotify로 노래를 재생해요. 다시 쓰려면 로그인해야 해요.'), confirm: tr('로그아웃'), destructive: true);
+        title: tr('Spotify에서 로그아웃할까요?'), message: tr('내 플레이리스트를 더 불러올 수 없어요. 다른 음악 앱으로 듣는 곡의 가사는 계속 따라와요.'), confirm: tr('로그아웃'), destructive: true);
     if (ok) await model.disconnect(SourceID.spotify);
+  }
+
+  Future<void> _connectMusicApp(AppModel model) async {
+    if (await confirmMusicAppAccess(context)) await model.requestMusicAppAccess();
   }
 
   Future<void> _export() async {
     final model = context.readModel;
     try {
       final dir = await getTemporaryDirectory();
-      final f = File('${dir.path}/LyricsTranslator-collection.json');
+      final f = File('${dir.path}/Vinylo-collection.json');
       await f.writeAsString(model.exportData(), flush: true);
-      await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: 'application/json')], subject: tr('Vynilo 컬렉션')));
+      await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: 'application/json')], subject: tr('Vinylo 컬렉션')));
     } catch (_) {
       if (mounted) showMessage(context, tr('내보내지 못했어요.'));
     }
