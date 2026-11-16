@@ -116,52 +116,59 @@ class _SearchViewState extends State<SearchView> {
     final t = context.theme;
     final spotifyLinked = model.settings.connectedSources.contains(SourceID.spotify);
     return Scaffold(
-      appBar: AppBar(title: Text(tr('노래 검색'))),
+      appBar: AppBar(title: Text(tr('노래 추가')), centerTitle: true),
       body: SafeArea(
         top: false,
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-            child: Container(
-              decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(10)),
-              child: TextField(
-                controller: _query,
-                autocorrect: false,
-                autofocus: widget.initialQuery.isEmpty,
-                textInputAction: TextInputAction.search,
-                onSubmitted: (_) => _search(),
-                style: TextStyle(color: t.textPrimary),
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  prefixIcon: Icon(Icons.search, color: t.textSecondary),
-                  hintText: tr('제목, 아티스트 검색'),
-                  hintStyle: TextStyle(color: t.textTertiary),
-                  suffixIcon: _query.text.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: tr('지우기'),
-                          icon: Icon(Icons.cancel, color: t.textTertiary, size: 20),
-                          onPressed: () => _setQuery('')),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
+        child: Column(
+          children: [
+            // Users without Spotify see no empty playlist tab (FG-02 note).
+            if (spotifyLinked || model.spotifyAuth.isConfigured)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+                child: Row(children: [_tabButton(tr('검색'), _SearchTab.search), _tabButton(tr('내 플레이리스트'), _SearchTab.spotify)]),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: Container(
+                decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(10)),
+                child: TextField(
+                  controller: _query,
+                  autocorrect: false,
+                  autofocus: widget.initialQuery.isEmpty,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _search(),
+                  style: TextStyle(color: t.textPrimary),
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    prefixIcon: Icon(Icons.search, color: t.textSecondary),
+                    hintText: tr('제목, 아티스트 검색'),
+                    hintStyle: TextStyle(color: t.textTertiary),
+                    suffixIcon: _query.text.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: tr('지우기'),
+                            icon: Icon(Icons.cancel, color: t.textTertiary, size: 20),
+                            onPressed: () => _setQuery(''),
+                          ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
                 ),
               ),
             ),
-          ),
-          // Users without Spotify see no empty playlist tab (FG-02 note).
-          if (spotifyLinked || model.spotifyAuth.isConfigured)
+            Expanded(child: _content()),
+            Divider(height: 1, thickness: 1, color: t.stroke.withValues(alpha: 0.6)),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: Row(children: [
-                _tabButton(tr('검색'), _SearchTab.search),
-                _tabButton(tr('내 Spotify'), _SearchTab.spotify),
-              ]),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+              child: Column(
+                children: [
+                  Text(tr('원하는 노래가 없다면, 직접 추가할 수 있어요.'), style: TextStyle(fontSize: 13, color: t.textTertiary)),
+                  const SizedBox(height: 10),
+                  SecondaryButton(tr('직접 추가하기'), icon: Icons.add, onPressed: () => model.push(AddRoute(AddSongDraft()))),
+                ],
+              ),
             ),
-          Expanded(child: _content()),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-            child: SecondaryButton(tr('직접 추가하기'), icon: Icons.add, onPressed: () => model.push(AddRoute(AddSongDraft()))),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
@@ -172,15 +179,19 @@ class _SearchViewState extends State<SearchView> {
     return Expanded(
       child: InkWell(
         onTap: () => setState(() => tab = value),
-        child: Column(children: [
-          const SizedBox(height: 4),
-          Text(title,
+        child: Column(
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14, color: on ? t.textPrimary : t.textSecondary)),
-          const SizedBox(height: 8),
-          Container(height: on ? 2 : 1, color: on ? t.textPrimary : t.stroke),
-        ]),
+              style: TextStyle(fontSize: 14, color: on ? t.textPrimary : t.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            Container(height: on ? 2 : 1, color: on ? t.textPrimary : t.stroke),
+          ],
+        ),
       ),
     );
   }
@@ -198,11 +209,7 @@ class _SearchViewState extends State<SearchView> {
     }
     if (isLoading && results.isEmpty) return Center(child: CircularProgressIndicator(color: t.textSecondary));
     if (results.isEmpty) return _noResults();
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: results.length,
-      itemBuilder: (_, i) => _resultRow(results[i]),
-    );
+    return ListView.builder(padding: const EdgeInsets.symmetric(vertical: 8), itemCount: results.length, itemBuilder: (_, i) => _resultRow(results[i]));
   }
 
   /// The user's Spotify playlists, saved albums and liked songs, with cover art.
@@ -214,40 +221,51 @@ class _SearchViewState extends State<SearchView> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(offline ? Icons.wifi_off : Icons.music_note, size: 40, color: t.textTertiary),
-          const SizedBox(height: 12),
-          Text(offline ? tr('오프라인') : tr('가사를 찾지 못했어요'),
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: t.textPrimary)),
-          const SizedBox(height: 12),
-          Text(
-            offline
-                ? tr('검색하려면 인터넷 연결이 필요해요. 가사를 붙여넣어 직접 추가할 수는 있어요.')
-                : error == null
-                    ? tr('영어 제목이나 원래 언어의 제목으로 다시 검색해 보세요.\n또는 가사를 붙여넣어 직접 추가할 수 있어요.')
-                    : error!.kind == LyricsErrorKind.busy
-                        ? tr('가사 서버(LRCLIB)가 지금 붐벼요. 몇 초 뒤에 다시 시도해 주세요.')
-                        : tr('가사 서버에 연결하지 못했어요 ({0}). 잠시 후 다시 시도해 주세요.', [error!.status ?? error!.kind.name]),
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: t.textSecondary),
-          ),
-          if (error != null) ...[
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: _search,
-              icon: Icon(Icons.refresh, color: t.textPrimary),
-              label: Text(tr('다시 시도'), style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(offline ? Icons.wifi_off : Icons.music_note, size: 40, color: t.textTertiary),
+            const SizedBox(height: 12),
+            Text(
+              offline ? tr('오프라인') : tr('가사를 찾지 못했어요'),
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: t.textPrimary),
             ),
-          ],
-          if (!offline) ...[
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _searchWeb,
-              icon: Icon(Icons.travel_explore, color: t.textPrimary),
-              label: Text(tr('인터넷에서 가사 찾기'), style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            Text(
+              offline
+                  ? tr('검색하려면 인터넷 연결이 필요해요. 가사를 붙여넣어 직접 추가할 수는 있어요.')
+                  : error == null
+                  ? tr('영어 제목이나 원래 언어의 제목으로 다시 검색해 보세요.\n또는 가사를 붙여넣어 직접 추가할 수 있어요.')
+                  : error!.kind == LyricsErrorKind.busy
+                  ? tr('가사 서버(LRCLIB)가 지금 붐벼요. 몇 초 뒤에 다시 시도해 주세요.')
+                  : tr('가사 서버에 연결하지 못했어요 ({0}). 잠시 후 다시 시도해 주세요.', [error!.status ?? error!.kind.name]),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14, color: t.textSecondary),
             ),
+            if (error != null) ...[
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: _search,
+                icon: Icon(Icons.refresh, color: t.textPrimary),
+                label: Text(
+                  tr('다시 시도'),
+                  style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+            if (!offline) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _searchWeb,
+                icon: Icon(Icons.travel_explore, color: t.textPrimary),
+                label: Text(
+                  tr('인터넷에서 가사 찾기'),
+                  style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
           ],
-        ]),
+        ),
       ),
     );
   }
@@ -267,20 +285,34 @@ class _SearchViewState extends State<SearchView> {
       onTap: () => _select(c),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        child: Row(children: [
-          SizedBox(width: 48, height: 48, child: GeneratedCover(seed: '${c.artistName}—${c.trackName}', radius: 4)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(c.trackName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: t.textPrimary)),
-              const SizedBox(height: 3),
-              Text('${TrackNormalizer.primaryArtist(c.artistName)} · ${(c.duration ?? 0).mmss}',
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: t.textSecondary)),
-            ]),
-          ),
-          const SizedBox(width: 8),
-          LyricsBadge(c.availability),
-        ]),
+        child: Row(
+          children: [
+            SizedBox(width: 48, height: 48, child: GeneratedCover(seed: '${c.artistName}—${c.trackName}', radius: 4)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    c.trackName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 14, color: t.textPrimary),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${TrackNormalizer.primaryArtist(c.artistName)} · ${(c.duration ?? 0).mmss}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: t.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            LyricsBadge(c.availability),
+          ],
+        ),
       ),
     );
   }

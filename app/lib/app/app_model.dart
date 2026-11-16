@@ -42,6 +42,12 @@ class AddRoute extends Route {
   const AddRoute(this.draft);
 }
 
+/// Cover choice for a song being added (Figma 커버 이미지 선택, GitHub cover-select-prototype).
+class CoverSelectRoute extends Route {
+  final AddSongDraft draft;
+  const CoverSelectRoute(this.draft);
+}
+
 class TranslatingRoute extends Route {
   final String songID;
   const TranslatingRoute(this.songID);
@@ -79,6 +85,9 @@ class AddSongDraft {
   /// The Spotify track this song came from, so playback links to it exactly.
   String? spotifyTrackID;
 
+  /// Translation language chosen on the add screen; null follows the app setting.
+  String? targetLanguage;
+
   AddSongDraft();
 
   AddSongDraft.fromCandidate(LyricsCandidate c, {String? shelfID}) {
@@ -114,7 +123,7 @@ class AppSettings {
   String claudeModel = ClaudeEngine.defaultModel;
 
   // Look (My page → 테마). Figma dark grey by default.
-  ThemeBase themeBase = ThemeBase.dark;
+  ThemeBase themeBase = ThemeBase.light;
   AccentColor accent = AccentColor.mint;
 
   EngineConfig get engineConfig => EngineConfig(
@@ -158,7 +167,7 @@ class AppSettings {
     s.gatewayURL = j['gatewayURL'] as String? ?? '';
     s.gatewayModel = j['gatewayModel'] as String? ?? '';
     s.claudeModel = j['claudeModel'] as String? ?? ClaudeEngine.defaultModel;
-    s.themeBase = ThemeBase.values.firstWhere((e) => e.name == j['themeBase'], orElse: () => ThemeBase.dark);
+    s.themeBase = ThemeBase.values.firstWhere((e) => e.name == j['themeBase'], orElse: () => ThemeBase.light);
     s.accent = AccentColor.values.firstWhere((e) => e.name == j['accent'], orElse: () => AccentColor.mint);
     return s;
   }
@@ -375,6 +384,12 @@ class AppModel extends ChangeNotifier {
 
   Language get target => settings.target;
 
+  /// The language a song is translated into: its own choice from the add screen, else the app's.
+  Language targetFor(String songID) {
+    final code = collection.song(songID)?.targetLanguage;
+    return code == null ? target : Language.named(code);
+  }
+
   AppTheme get theme => AppTheme.of(settings.themeBase, settings.accent);
 
   String? apiKey(EngineKind kind) {
@@ -397,6 +412,7 @@ class AppModel extends ChangeNotifier {
       lyricsType: doc.type,
       sourceProvider: draft.sourceProvider,
       curatedShelfID: draft.curatedShelfID,
+      targetLanguage: draft.targetLanguage,
     );
     if (coverSourcePath != null) song.coverPath = CoverStore.save(coverSourcePath, song.id);
     _mutate((s) {
@@ -418,20 +434,20 @@ class AppModel extends ChangeNotifier {
   /// True when the song was not translated because its lyrics are already in the target language.
   bool translationSkipped(String songID) {
     final first = collection.linesFor(songID).firstOrNull;
-    return first != null && collection.translation(songID, first.index, target.code)?.engineID == sameLanguageEngine;
+    return first != null && collection.translation(songID, first.index, targetFor(songID).code)?.engineID == sameLanguageEngine;
   }
 
   void startTranslation(String songID, {TranslationEngine? forceEngine, bool skipSameLanguage = true}) {
     if (_jobs.containsKey(songID)) return;
     final engine = forceEngine ?? currentEngine();
     final lines = collection.linesFor(songID);
-    final target = this.target;
+    final target = targetFor(songID);
     // Lyrics already in the target language are not sent to any engine (no cost, no waiting).
-    final untouched = collection.translatedCount(songID, target.code) == 0;
-    if (skipSameLanguage && forceEngine == null && untouched && LanguageGuess.songLanguage(lines.map((l) => l.text)) == target.code) {
+    final untouched = collection.translatedCount(songID, targetFor(songID).code) == 0;
+    if (skipSameLanguage && forceEngine == null && untouched && LanguageGuess.songLanguage(lines.map((l) => l.text)) == targetFor(songID).code) {
       _mutate((s) {
         for (final l in lines) {
-          s.commit(Copied(l.index), songID: songID, target: target.code, engineID: sameLanguageEngine);
+          s.commit(Copied(l.index), songID: songID, target: targetFor(songID).code, engineID: sameLanguageEngine);
         }
         s.updateSong(songID, (song) => song.status = SongStatus.done);
       });
@@ -439,7 +455,7 @@ class AppModel extends ChangeNotifier {
       return;
     }
     final done = collection.translations
-        .where((t) => t.songID == songID && t.targetLanguage == target.code && t.outcome != Outcome.failed)
+        .where((t) => t.songID == songID && t.targetLanguage == targetFor(songID).code && t.outcome != Outcome.failed)
         .map((t) => t.index)
         .toSet();
     _mutate((s) => s.updateSong(songID, (song) => song.status = SongStatus.translating));
@@ -453,7 +469,7 @@ class AppModel extends ChangeNotifier {
           token: token,
           commit: (r) {
             if (!token.isCancelled) {
-              _mutate((s) => s.commit(r, songID: songID, target: target.code, engineID: engine.id));
+              _mutate((s) => s.commit(r, songID: songID, target: targetFor(songID).code, engineID: engine.id));
             }
           },
           progress: (p) {
@@ -474,7 +490,7 @@ class AppModel extends ChangeNotifier {
       return;
     }
     final lines = collection.linesFor(songID).length;
-    final ok = collection.translatedCount(songID, target.code);
+    final ok = collection.translatedCount(songID, targetFor(songID).code);
     _mutate((s) => s.updateSong(
         songID, (song) => song.status = (error == null && ok == lines) ? SongStatus.done : SongStatus.failed));
     if (error is LLMError) {
@@ -533,14 +549,14 @@ class AppModel extends ChangeNotifier {
 
   void retranslate(String songID) {
     _jobs.remove(songID)?.cancel();
-    _mutate((s) => s.translations.removeWhere((t) => t.songID == songID && t.targetLanguage == target.code));
+    _mutate((s) => s.translations.removeWhere((t) => t.songID == songID && t.targetLanguage == targetFor(songID).code));
     startTranslation(songID, skipSameLanguage: false);
   }
 
   // ── Explanations (RQ-11) ──
 
   Explanation? cachedExplanation(String songID, int index) =>
-      collection.explanation(songID, index, target.code)?.explanation;
+      collection.explanation(songID, index, targetFor(songID).code)?.explanation;
 
   Future<Explanation> explain(String songID, int index, {TranslationEngine? engine}) async {
     if (engine == null) {
@@ -551,11 +567,11 @@ class AppModel extends ChangeNotifier {
     final line = lines.where((l) => l.index == index).firstOrNull;
     if (line == null) throw LLMError(LLMErrorKind.unavailable, detail: tr('줄을 찾을 수 없어요.'));
     final e = engine ?? currentEngine();
-    final explanation = await e.explain(line, Prompts.context(line, lines), target);
+    final explanation = await e.explain(line, Prompts.context(line, lines), targetFor(songID));
     _mutate((s) => s.cacheExplanation(ExplanationRecord(
           songID: songID,
           index: index,
-          targetLanguage: target.code,
+          targetLanguage: targetFor(songID).code,
           engineID: e.id,
           promptVersion: Prompts.version,
           explanation: explanation,
@@ -1127,7 +1143,7 @@ class AppModel extends ChangeNotifier {
     final lines = collection.linesFor(songID);
     if (lines.isEmpty) return null;
     String? tr(int i) => collection.translations
-        .where((t) => t.songID == songID && t.index == i && t.targetLanguage == target.code)
+        .where((t) => t.songID == songID && t.index == i && t.targetLanguage == targetFor(songID).code)
         .firstOrNull
         ?.text;
     final saved = collection.phrases.where((p) => p.songID == songID).map((p) => p.index).toList()..sort();
@@ -1146,7 +1162,7 @@ class AppModel extends ChangeNotifier {
   /// Lines with their translations for the quiz builder.
   Map<int, String> translationsFor(String songID) => {
         for (final t in collection.translations)
-          if (t.songID == songID && t.targetLanguage == target.code && t.text != null) t.index: t.text!,
+          if (t.songID == songID && t.targetLanguage == targetFor(songID).code && t.text != null) t.index: t.text!,
       };
 
   /// Records a passed level. Returns true when this pass conquered the song.

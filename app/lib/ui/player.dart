@@ -236,7 +236,7 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
           const Icon(Icons.translate_rounded, size: 14, color: PlayerPalette.placeholder),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(tr('가사가 이미 {0}(이)라서 해석을 생략했어요.', [model.target.nativeName]), style: const TextStyle(fontSize: 12, color: PlayerPalette.placeholder)),
+            child: Text(tr('가사가 이미 {0}(이)라서 해석을 생략했어요.', [model.targetFor(id).nativeName]), style: const TextStyle(fontSize: 12, color: PlayerPalette.placeholder)),
           ),
         ]),
       );
@@ -434,7 +434,7 @@ class _PlayerViewState extends State<PlayerView> with TickerProviderStateMixin {
     // line to tap next stands out.
     final rec = _rec;
     final active = rec != null ? line.index == rec.next : mode != _Mode.linkedSynced || line.index == current;
-    final target = model.target.code;
+    final target = model.targetFor(id).code;
     final translation = model.translationSkipped(id) ? null : model.collection.translationText(id, line.index, target);
     // While the song plays, a tap moves the music to that line; tapping the current line (or a
     // long press) opens the explanation.

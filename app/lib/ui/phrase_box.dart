@@ -98,7 +98,7 @@ class _PhraseBoxViewState extends State<PhraseBoxView> {
     final t = context.theme;
     final line = model.collection.line(p.songID, p.index);
     final song = model.collection.song(p.songID);
-    final translation = model.collection.translationText(p.songID, p.index, model.target.code);
+    final translation = model.collection.translationText(p.songID, p.index, model.targetFor(p.songID).code);
     return InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () => showLineDetail(context, songID: p.songID, index: p.index, canReplay: false),

@@ -45,6 +45,9 @@ class _LibraryViewState extends State<LibraryView> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 8, 0),
             child: Row(children: [
+              // The record mark from the Figma start frame, next to the wordmark (0.14.0).
+              Image.asset('assets/brand/vinylo_logo.png', width: 22, height: 22, semanticLabel: 'Vinylo'),
+              const SizedBox(width: 8),
               Text('Vinylo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, letterSpacing: -0.2, color: t.textPrimary)),
               const Spacer(),
               if (songs.isNotEmpty)
@@ -998,11 +1001,11 @@ class RecommendRow extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.24, color: t.textPrimary)),
             if (subtitle != null) ...[
-              const SizedBox(width: 8),
-              Expanded(child: Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: t.textTertiary))),
+              const SizedBox(height: 2),
+              Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: t.textTertiary)),
             ],
           ]),
         ),

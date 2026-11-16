@@ -43,7 +43,7 @@ class _TranslatingViewState extends State<TranslatingView> {
   }
 
   List<LyricLine> _translated(AppModel model) {
-    final target = model.target.code;
+    final target = model.targetFor(widget.songID).code;
     return [
       for (final l in model.collection.linesFor(widget.songID))
         if (model.collection.translation(widget.songID, l.index, target)?.outcome case final o? when o != Outcome.failed) l,
@@ -74,7 +74,7 @@ class _TranslatingViewState extends State<TranslatingView> {
     final total = max(1, p?.total ?? lines.length);
     final translated = _translated(model);
     final shown = min(_shown, translated.length);
-    final target = model.target.code;
+    final target = model.targetFor(widget.songID).code;
 
     return PopScope(
       canPop: false,

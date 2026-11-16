@@ -5,7 +5,7 @@
     {
       "id": "easy-first",
       "title": "처음 공부하기 좋은 노래",
-      "subtitle": "Easy first songs",
+      "subtitle": "전 세계가 사랑한 팝송으로 공부해보세요",
       "songs": [
         {
           "title": "Viva La Vida",
@@ -36,8 +36,8 @@
     },
     {
       "id": "popular",
-      "title": "모두가 아는 인기곡",
-      "subtitle": "Popular classics",
+      "title": "Vinylo가 추천하는 노래",
+      "subtitle": "듣다 보면 영어가 저절로 들리는 노래를 모았어요",
       "songs": [
         {
           "title": "Shape of You",

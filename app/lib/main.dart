@@ -5,6 +5,7 @@ import 'app/app_model.dart';
 import 'app/i18n.dart';
 import 'app/theme.dart';
 import 'ui/add_song.dart';
+import 'ui/cover_select.dart';
 import 'ui/components.dart';
 import 'ui/library.dart';
 import 'ui/mini_player.dart';
@@ -65,10 +66,7 @@ class _LyricsTranslatorAppState extends State<LyricsTranslatorApp> with WidgetsB
             theme: theme.material,
             builder: (context, child) => AppThemeScope(
               theme: theme,
-              child: AnnotatedRegion<SystemUiOverlayStyle>(
-                value: theme.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-                child: child!,
-              ),
+              child: AnnotatedRegion<SystemUiOverlayStyle>(value: theme.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark, child: child!),
             ),
             // No login: lyrics follow any music app; Spotify can be connected in 마이페이지.
             home: const MainTabView(),
@@ -109,46 +107,48 @@ class _MainTabViewState extends State<MainTabView> {
         }
       },
       child: Scaffold(
-        body: Stack(children: [
-          IndexedStack(
-            index: model.selectedTab.index,
-            children: [
-              // The library stack is driven by model.libraryPath, so any screen can reset the flow.
-              Navigator(
-                key: _libraryNav,
-                pages: [
-                  const MaterialPage(key: ValueKey('library'), child: LibraryView()),
-                  for (final (i, r) in model.libraryPath.indexed) _page(r, i),
-                ],
-                onDidRemovePage: (page) {
-                  // Called for user pops (back gesture); declarative removals no longer match the path.
-                  final path = model.libraryPath;
-                  for (var i = 0; i < path.length; i++) {
-                    if (_keyFor(path[i], i) == page.key) {
-                      model.setPath(path.sublist(0, i));
-                      return;
+        body: Stack(
+          children: [
+            IndexedStack(
+              index: model.selectedTab.index,
+              children: [
+                // The library stack is driven by model.libraryPath, so any screen can reset the flow.
+                Navigator(
+                  key: _libraryNav,
+                  pages: [
+                    const MaterialPage(key: ValueKey('library'), child: LibraryView()),
+                    for (final (i, r) in model.libraryPath.indexed) _page(r, i),
+                  ],
+                  onDidRemovePage: (page) {
+                    // Called for user pops (back gesture); declarative removals no longer match the path.
+                    final path = model.libraryPath;
+                    for (var i = 0; i < path.length; i++) {
+                      if (_keyFor(path[i], i) == page.key) {
+                        model.setPath(path.sublist(0, i));
+                        return;
+                      }
                     }
-                  }
-                },
-              ),
-              const QuizHomeView(),
-              const PhraseBoxView(),
-              const SettingsView(asTab: true),
-            ],
-          ),
-          if (model.banner case final b?)
-            Positioned(
-              left: 0,
-              right: 0,
-              top: MediaQuery.of(context).padding.top + 4,
-              child: BannerView(
-                message: b.message,
-                actionTitle: b.actionTitle,
-                action: b.actionTitle == null ? null : (b.onAction ?? model.openSettings),
-                dismiss: () => model.showBanner(null),
-              ),
+                  },
+                ),
+                const QuizHomeView(),
+                const PhraseBoxView(),
+                const SettingsView(asTab: true),
+              ],
             ),
-        ]),
+            if (model.banner case final b?)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: MediaQuery.of(context).padding.top + 4,
+                child: BannerView(
+                  message: b.message,
+                  actionTitle: b.actionTitle,
+                  action: b.actionTitle == null ? null : (b.onAction ?? model.openSettings),
+                  dismiss: () => model.showBanner(null),
+                ),
+              ),
+          ],
+        ),
         bottomNavigationBar: showChrome ? _tabBar(model, t, showMini) : null,
       ),
     );
@@ -156,7 +156,7 @@ class _MainTabViewState extends State<MainTabView> {
 
   /// The tab bar, with the mini player docked on top of it as one full-width box.
   Widget _tabBar(AppModel model, AppTheme t, bool showMini) {
-    Widget tab(AppTab tab, IconData icon, String label) {
+    Widget tab(AppTab tab, IconData icon, IconData selectedIcon, String label) {
       final on = model.selectedTab == tab;
       return Expanded(
         child: Semantics(
@@ -174,11 +174,8 @@ class _MainTabViewState extends State<MainTabView> {
             },
             child: SizedBox(
               height: 58,
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(icon, size: 22, color: on ? t.textPrimary : t.textTertiary),
-                const SizedBox(height: 3),
-                Text(label, style: TextStyle(fontSize: 11, fontWeight: on ? FontWeight.w600 : FontWeight.w400, color: on ? t.textPrimary : t.textTertiary)),
-              ]),
+              // Figma (light home): icons only, filled when selected; the label stays for screen readers.
+              child: Center(child: Icon(on ? selectedIcon : icon, size: 26, color: on ? t.textPrimary : t.textTertiary)),
             ),
           ),
         ),
@@ -189,35 +186,41 @@ class _MainTabViewState extends State<MainTabView> {
       color: t.surface,
       child: SafeArea(
         top: false,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          if (showMini) ...[
-            const MiniPlayer(),
-            Divider(height: 1, thickness: 1, color: t.stroke.withValues(alpha: 0.6)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (showMini) ...[const MiniPlayer(), Divider(height: 1, thickness: 1, color: t.stroke.withValues(alpha: 0.6))],
+            Row(
+              children: [
+                tab(AppTab.library, Icons.home_outlined, Icons.home_rounded, tr('라이브러리')),
+                tab(AppTab.quiz, Icons.quiz_outlined, Icons.quiz_rounded, tr('퀴즈')),
+                tab(AppTab.phrases, Icons.star_outline_rounded, Icons.star_rounded, tr('문장 저장함')),
+                tab(AppTab.my, Icons.person_outline_rounded, Icons.person_rounded, tr('마이페이지')),
+              ],
+            ),
           ],
-          Row(children: [
-            tab(AppTab.library, Icons.library_music_outlined, tr('라이브러리')),
-            tab(AppTab.quiz, Icons.quiz_outlined, tr('퀴즈')),
-            tab(AppTab.phrases, Icons.bookmark_border_rounded, tr('문장 저장함')),
-            tab(AppTab.my, Icons.person_outline_rounded, tr('마이페이지')),
-          ]),
-        ]),
+        ),
       ),
     );
   }
 
-  ValueKey<String> _keyFor(Route r, int i) => ValueKey('$i:${switch (r) {
-        SearchRoute() => 'search',
-        AddRoute() => 'add',
-        TranslatingRoute(:final songID) => 'translating:$songID',
-        SavedRoute(:final songID) => 'saved:$songID',
-        PlayerRoute(:final songID) => 'player:$songID',
-        SpotifyListRoute(:final list) => 'spotify:${list.kind.name}:${list.id}',
-      }}');
+  ValueKey<String> _keyFor(Route r, int i) => ValueKey(
+    '$i:${switch (r) {
+      SearchRoute() => 'search',
+      AddRoute() => 'add',
+      CoverSelectRoute() => 'cover',
+      TranslatingRoute(:final songID) => 'translating:$songID',
+      SavedRoute(:final songID) => 'saved:$songID',
+      PlayerRoute(:final songID) => 'player:$songID',
+      SpotifyListRoute(:final list) => 'spotify:${list.kind.name}:${list.id}',
+    }}',
+  );
 
   Page<void> _page(Route r, int i) {
     final Widget child = switch (r) {
       SearchRoute(:final prefill, :final hint) => SearchView(initialQuery: prefill, hint: hint),
       AddRoute(:final draft) => AddSongView(draft: draft),
+      CoverSelectRoute(:final draft) => CoverSelectView(draft: draft),
       TranslatingRoute(:final songID) => TranslatingView(songID: songID),
       SavedRoute(:final songID) => SavedView(songID: songID),
       PlayerRoute(:final songID) => PlayerView(songID: songID),

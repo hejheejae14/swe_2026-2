@@ -100,7 +100,7 @@ class _LineDetailViewState extends State<LineDetailView> {
     final t = context.theme;
     final line = model.collection.line(widget.songID, widget.index);
     final saved = model.collection.isSaved(widget.songID, widget.index);
-    final translation = model.translationSkipped(widget.songID) ? null : model.collection.translationText(widget.songID, widget.index, model.target.code);
+    final translation = model.translationSkipped(widget.songID) ? null : model.collection.translationText(widget.songID, widget.index, model.targetFor(widget.songID).code);
 
     // The controls and buttons are a fixed footer, visible at any sheet height; only the
     // explanation above them scrolls.

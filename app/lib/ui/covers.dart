@@ -154,7 +154,7 @@ class CoverPicker extends StatelessWidget {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(tr('기다리는 동안 앨범 커버를 골라요'), style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: t.textPrimary)),
               const SizedBox(height: 2),
-              Text(tr('CD 색만 고르면 커버가 자동으로 만들어져요'), style: TextStyle(fontSize: 12, color: t.textTertiary)),
+              Text(tr('기본 커버를 고르거나 앨범에서 사진을 골라요'), style: TextStyle(fontSize: 12, color: t.textTertiary)),
             ]),
           ),
         ]),
@@ -163,23 +163,25 @@ class CoverPicker extends StatelessWidget {
           height: 40,
           child: ListView(scrollDirection: Axis.horizontal, children: [
             _GalleryButton(onTap: () => _pickPhoto(context)),
-            for (final c in cdColors)
+            for (var i = 0; i < DiscCoverStyle.presets.length; i++)
               Padding(
                 padding: const EdgeInsets.only(left: 10),
                 child: Semantics(
                   button: true,
-                  label: tr('CD 색으로 커버 만들기'),
+                  label: tr('기본 커버 {0}', [i + 1]),
                   child: GestureDetector(
-                    onTap: () => _generate(context, c),
+                    onTap: () => _generate(context, DiscCoverStyle.presets[i]),
                     child: Container(
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: SweepGradient(colors: [c, CoverPainter(seed: '', color: c).colors.$2, c]),
+                        gradient: SweepGradient(colors: [DiscCoverStyle.presets[i].a, DiscCoverStyle.presets[i].b, DiscCoverStyle.presets[i].a]),
                         border: Border.all(color: t.stroke),
                       ),
-                      child: Center(child: Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: t.background))),
+                      child: Center(
+                          child: Container(
+                              width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: DiscCoverStyle.presets[i].background))),
                     ),
                   ),
                 ),
@@ -200,11 +202,9 @@ class CoverPicker extends StatelessWidget {
     }
   }
 
-  Future<void> _generate(BuildContext context, Color c) async {
+  Future<void> _generate(BuildContext context, DiscCoverStyle style) async {
     final model = context.readModel;
-    final song = model.collection.song(songID);
-    if (song == null) return;
-    final png = await CoverPainter(seed: song.id, label: song.title, color: c).toPng();
+    final png = await DiscCoverPainter(style).toPng();
     if (png != null) model.setCoverBytes(songID, png);
   }
 }
@@ -233,4 +233,75 @@ class _GalleryButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The eight default covers of the Figma component '커버 기본 이미지' (node 290:2996), as used by
+/// the cover-select prototype: a gradient disc on a dark square.
+class DiscCoverStyle {
+  final Color background, a, b;
+  const DiscCoverStyle(this.background, this.a, this.b);
+
+  static const presets = [
+    DiscCoverStyle(Color(0xFF3F323C), Color(0xFFFF6E9B), Color(0xFFFF9D54)),
+    DiscCoverStyle(Color(0xFF3E3933), Color(0xFFFFA75A), Color(0xFFB1F94E)),
+    DiscCoverStyle(Color(0xFF3F3D31), Color(0xFFFFD051), Color(0xFF5DF945)),
+    DiscCoverStyle(Color(0xFF343F3B), Color(0xFF7EE7A0), Color(0xFF44E4E0)),
+    DiscCoverStyle(Color(0xFF2C3E3E), Color(0xFF00D7AB), Color(0xFF007CC9)),
+    DiscCoverStyle(Color(0xFF2A3E50), Color(0xFF00ADF3), Color(0xFF5648F1)),
+    DiscCoverStyle(Color(0xFF363346), Color(0xFF927EF5), Color(0xFFFF5EE6)),
+    DiscCoverStyle(Color(0xFF3C3E40), Color(0xFFDDE1E6), Color(0xFFB0ABC2)),
+  ];
+
+  /// The preset for a song without album art, picked from its title as in the prototype
+  /// (h = h × 31 + code point, unsigned 32-bit).
+  static int indexFor(String title) {
+    var h = 0;
+    for (final r in title.runes) {
+      h = (h * 31 + r) & 0xFFFFFFFF;
+    }
+    return h % presets.length;
+  }
+}
+
+class DiscCoverPainter extends CustomPainter {
+  final DiscCoverStyle style;
+  const DiscCoverPainter(this.style);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    canvas.drawRect(Offset.zero & size, Paint()..color = style.background);
+    final c = Offset(w / 2, w / 2);
+    final r = w * 0.36;
+    canvas.drawCircle(
+        c,
+        r,
+        Paint()
+          ..shader = ui.Gradient.sweep(c, [style.a, style.b, style.a], const [0, 0.5, 1], TileMode.clamp, -pi / 2, 3 * pi / 2));
+    canvas.drawCircle(c, r * 0.22, Paint()..color = style.background);
+  }
+
+  @override
+  bool shouldRepaint(DiscCoverPainter old) => old.style != style;
+
+  Future<Uint8List?> toPng({double size = 768}) async {
+    final rec = ui.PictureRecorder();
+    paint(Canvas(rec), Size(size, size));
+    final img = await rec.endRecording().toImage(size.round(), size.round());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    img.dispose();
+    return data?.buffer.asUint8List();
+  }
+}
+
+class DiscCover extends StatelessWidget {
+  final DiscCoverStyle style;
+  final double radius;
+  const DiscCover(this.style, {super.key, this.radius = 0});
+
+  @override
+  Widget build(BuildContext context) => AspectRatio(
+        aspectRatio: 1,
+        child: ClipRRect(borderRadius: BorderRadius.circular(radius), child: CustomPaint(painter: DiscCoverPainter(style))),
+      );
 }

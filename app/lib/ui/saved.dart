@@ -60,7 +60,7 @@ class _SavedViewState extends State<SavedView> with SingleTickerProviderStateMix
               const SizedBox(height: 8),
               Text('${song?.title ?? ''} · ${song?.artist ?? ''}', style: TextStyle(fontSize: 15, color: t.textSecondary)),
               const SizedBox(height: 8),
-              Text(tr('가사 {0}줄 번역 완료', [model.collection.translatedCount(widget.songID, model.target.code)]),
+              Text(tr('가사 {0}줄 번역 완료', [model.collection.translatedCount(widget.songID, model.targetFor(widget.songID).code)]),
                   style: TextStyle(fontSize: 12, color: t.textSecondary)),
               const SizedBox(height: 32),
               PrimaryButton(tr('바로 공부하기'), onPressed: () => model.setPath([PlayerRoute(widget.songID)])),

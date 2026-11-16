@@ -111,8 +111,11 @@ void main() {
     });
   });
 
-  test('theme settings round-trip and default to the Figma dark theme', () {
-    expect(AppSettings().themeBase, ThemeBase.dark);
+  test('theme settings round-trip and default to the Figma light theme (0.14.0)', () {
+    expect(AppSettings().themeBase, ThemeBase.light);
+    expect(AppSettings.fromJson(const {}).themeBase, ThemeBase.light);
+    final dark = AppSettings.fromJson((AppSettings()..themeBase = ThemeBase.dark).toJson());
+    expect(dark.themeBase, ThemeBase.dark); // a saved choice is kept
     final s = AppSettings()
       ..themeBase = ThemeBase.light
       ..accent = AccentColor.blue;

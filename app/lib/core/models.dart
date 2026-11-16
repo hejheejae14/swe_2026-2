@@ -89,6 +89,9 @@ class Song {
   DateTime addedAt;
   String? curatedShelfID;
 
+  /// Translation language chosen for this song (0.14.0); null follows the app setting.
+  String? targetLanguage;
+
   Song({
     String? id,
     required this.title,
@@ -103,6 +106,7 @@ class Song {
     this.conqueredAt,
     DateTime? addedAt,
     this.curatedShelfID,
+    this.targetLanguage,
   })  : id = id ?? newUUID(),
         addedAt = addedAt ?? DateTime.now();
 
@@ -125,6 +129,7 @@ class Song {
     _put(m, 'coverPath', coverPath);
     _put(m, 'conqueredAt', conqueredAt == null ? null : c.encode(conqueredAt!));
     _put(m, 'curatedShelfID', curatedShelfID);
+    _put(m, 'targetLanguage', targetLanguage);
     return m;
   }
 
@@ -142,6 +147,7 @@ class Song {
         conqueredAt: j['conqueredAt'] == null ? null : c.decode(j['conqueredAt']),
         addedAt: c.decode(j['addedAt']),
         curatedShelfID: j['curatedShelfID'] as String?,
+        targetLanguage: j['targetLanguage'] as String?,
       );
 }
 
